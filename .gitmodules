@@ -1,0 +1,3 @@
+[submodule "AnalysisTools/TriggerEfficiencies/Start Devs"]
+	path = AnalysisTools/TriggerEfficiencies/Start Devs
+	url = https://github.com/GasperJu/ScoutingDijetAN.git
