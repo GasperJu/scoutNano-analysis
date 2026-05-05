@@ -50,6 +50,14 @@ def deltaR(jet, mu):
     dphi = math.fabs(math.atan2(math.sin(jet.phi - mu.phi), math.cos(jet.phi - mu.phi)))
     return math.sqrt(deta*deta + dphi*dphi)
 
+def delta_phi(phi1, phi2):
+    dphi = phi1 - phi2
+    while dphi > math.pi:
+        dphi -= 2.0 * math.pi
+    while dphi <= -math.pi:
+        dphi += 2.0 * math.pi
+    return dphi
+
 # ---------------------------------------------------------------------------------------------------
 def JetID(jet):
     eta = jet.eta
@@ -117,6 +125,46 @@ def MuonID(mu):
     if mu.nTrackerLayersWithMeasurement <= 5: return False
 
     return True
+
+def get_trigger_bits(event):
+    dst = Object(event, "DST")
+    pass_dst = bool(getattr(dst, "PFScouting_JetHT", False))
+
+    pass_htt200 = bool(getattr(event, "L1_HTT200er", False))
+    pass_htt255 = bool(getattr(event, "L1_HTT255er", False))
+    pass_htt280 = bool(getattr(event, "L1_HTT280er", False))
+    pass_singlejet180 = bool(getattr(event, "L1_SingleJet180", False))
+    pass_doublejet = bool(getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False))
+    pass_ett2000 = bool(getattr(event, "L1_ETT2000", False))
+
+    pass_any_unprescaled = pass_htt280 or pass_singlejet180 or pass_doublejet or pass_ett2000
+    pass_nonhtt_unprescaled = pass_singlejet180 or pass_doublejet or pass_ett2000
+    prescaled_triggers = pass_htt200 or pass_htt255
+    pass_prescaled_only = (pass_htt200 or pass_htt255) and not pass_any_unprescaled
+
+    pass_baseline = (
+        pass_dst and
+        (pass_htt280 or pass_singlejet180)
+    )
+    pass_baseline_L1 = (
+        pass_htt280 or pass_singlejet180
+    )
+
+    return {
+        "pass_dst": pass_dst,
+        "pass_htt200": pass_htt200,
+        "pass_htt255": pass_htt255,
+        "pass_htt280": pass_htt280,
+        "pass_singlejet180": pass_singlejet180,
+        "pass_doublejet": pass_doublejet,
+        "pass_ett2000": pass_ett2000,
+        "pass_any_unprescaled": pass_any_unprescaled,
+        "pass_nonhtt_unprescaled": pass_nonhtt_unprescaled,
+        "prescaled_triggers": prescaled_triggers,
+        "pass_prescaled_only": pass_prescaled_only,
+        "pass_baseline": pass_baseline,
+        "pass_baseline_L1": pass_baseline_L1,
+    }
 # ---------------------------------------------------------------------------------------------------
 
 class TrigDijetHTAnalysis(Module):
@@ -344,7 +392,7 @@ class TrigDijetHTAnalysis(Module):
         njetAcc = clean_jets
 
         # --- Global HT definition ---
-        cutHT = 300.0
+        cutHT = 0.0
         njetHt = [j for j in clean_jets if j.Pt() > 30 and abs(j.Eta()) < 2.5]
         HT = sum(j.Pt() for j in njetHt)
 
@@ -403,7 +451,11 @@ class TrigDijetHTAnalysis(Module):
             # Tuning thresholds
             # -----------------
             boosted_pt_cut = 170
-            isr_pt_cut_boosted = 150            
+            boosted_eta_cut = 3.0
+            isr_pt_cut_boosted = 200
+            isr_eta_cut_boosted = 3.0
+            isr_min_dr_boosted = 2.0
+            isr_min_dphi_boosted = 2.5
             resJ_pt_cut = 70.0  
             ISR_pt_cut_resolved = 70.0
    
@@ -415,7 +467,7 @@ class TrigDijetHTAnalysis(Module):
 
             if len(ak8jets) >= 1:
                 boosted_lv = Lorentz(ak8jets)[0]
-                if boosted_lv.Pt() > boosted_pt_cut:
+                if boosted_lv.Pt() > boosted_pt_cut and abs(boosted_lv.Eta()) < boosted_eta_cut:
 
                     # Now build the ISR jet candidates from AK4 jets that are NOT in the AK8 jet
                     isr_candidates = []
@@ -424,9 +476,15 @@ class TrigDijetHTAnalysis(Module):
                         j_lv.SetPtEtaPhiM(j.Pt(), j.Eta(), j.Phi(), j.M())
 
                         dR = boosted_lv.DeltaR(j_lv)
+                        dPhi = abs(delta_phi(boosted_lv.Phi(), j_lv.Phi()))
 
                         # Select ISR jet if it's well separated and above threshold
-                        if j_lv.Pt() > isr_pt_cut_boosted and dR > 1.0:
+                        if (
+                            j_lv.Pt() > isr_pt_cut_boosted and
+                            abs(j_lv.Eta()) < isr_eta_cut_boosted and
+                            dR > isr_min_dr_boosted and
+                            dPhi > isr_min_dphi_boosted
+                        ):
                             isr_candidates.append(j_lv)
 
                     # Require at least 1 ISR candidate: if any ISR candidate exists, select the highest-pT one
@@ -559,24 +617,8 @@ class TrigDijetHTAnalysis(Module):
         #    "L1_HTT255er",
         #]
 
-        # --- Keep only events in which one of the unprescaled triggers in the JetHT scouting path fired ---          
-        if not (                                                                                              
-                getattr(event, "L1_HTT280er", False) or                                                        
-                getattr(event, "L1_SingleJet180", False) or                                                        
-                getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or                                                        
-                getattr(event, "L1_ETT2000", False)                                                       
-        ):                                                                                    
-            return False
-
-        # --- Discard events in which one of the prescaled/disabled triggers in the JetHT scouting path fired ---          
-        if (                                                                                              
-                getattr(event, "L1_HTT200er", False) or                                                        
-                getattr(event, "L1_HTT255er", False)                                                         
-        ):                                                                                    
-            return False                                                                                                          
-
-
-        if dst.PFScouting_JetHT == 1:
+        trig = get_trigger_bits(event)
+        if trig["pass_baseline"]:
             self.h_ht_inclusive_passed.Fill(HT) ## Inclusive
             self.h_minv_1_passed.Fill(Mjj_1) ## VBF
             self.h_ht_1_passed.Fill(HT_1) ## VBF

@@ -19,13 +19,14 @@ ROOT.gStyle.SetTextFont(42)
 # Data info
 #================
 SAMPLES = {
-    #"histos_QCD-HT100to200_JECs.root": 25360000.0,
-    "histos_QCD-HT200to400_JECs.root": 1951000.0,
-    "histos_QCD-HT400to600_JECs.root": 96660.0,
-    "histos_QCD-HT600to800_JECs.root": 13684.0,
-    "histos_QCD-HT800to1000_JECs.root": 3047.0,
-    "histos_TT4Q_JECs.root": 762.1,
-    "histos_Wto2Q_JECs.root": 16100.0,
+    ##"histos_QCD-HT100to200_JECs.root": 25360000.0,
+    #"histos_QCD-HT200to400_JECs.root": 1951000.0,
+    #"histos_QCD-HT400to600_JECs.root": 96660.0,
+    #"histos_QCD-HT600to800_JECs.root": 13684.0,
+    #"histos_QCD-HT800to1000_JECs.root": 3047.0,
+    #"histos_TT4Q_JECs.root": 762.1,
+    "histosMC_TT4Q_newL1TrgLogic.root": 762.1,
+    #"histos_Wto2Q_JECs.root": 16100.0,
 }
 
 BASE_PATH = "/eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff"
@@ -115,7 +116,7 @@ def main(args):
 
     LUMI_PB = 1000.0 
     statOption = ROOT.TEfficiency.kFCP
-    variables  = ["ht_inclusive", "pt_leading"]
+    variables  = ["ht_inclusive", "pt_leading", "dijetMass"]
     triggers   = ["passed"] #HLT or DST (only the las tone now)
 
     for var in variables:
@@ -233,7 +234,8 @@ def main(args):
         c.Update()
         c.Modified()
         for fs in args.formats:
-            savename = f'/eos/user/e/elfontan/www/dijetAnaRun3/TRIGGER_EFF/INCLUSIVE_TrgEff/mcWeightedAll_JECs_inclTrgEff_{var}{fs}'
+            savename = f'/eos/user/e/elfontan/www/dijetAnaRun3/TRIGGER_EFF/INCLUSIVE_TrgEff/mcTT4Q_newTriggerLogic_inclTrgEff_{var}{fs}'
+            #savename = f'/eos/user/e/elfontan/www/dijetAnaRun3/TRIGGER_EFF/INCLUSIVE_TrgEff/mcWeightedAll_JECs_inclTrgEff_{var}{fs}'
             c.SaveAs(savename)
             
 

@@ -51,6 +51,14 @@ def deltaR(jet, mu):
     dphi = math.fabs(math.atan2(math.sin(jet.phi - mu.phi), math.cos(jet.phi - mu.phi)))
     return math.sqrt(deta*deta + dphi*dphi)
 
+def delta_phi(phi1, phi2):
+    dphi = phi1 - phi2
+    while dphi > math.pi:
+        dphi -= 2.0 * math.pi
+    while dphi <= -math.pi:
+        dphi += 2.0 * math.pi
+    return dphi
+
 # ---------------------------------------------------------------------------------------------------
 def JetID(jet):
     eta = jet.eta
@@ -119,6 +127,55 @@ def MuonID(mu):
 
     return True
 
+def get_trigger_bits(event):
+    dst = Object(event, "DST")
+    pass_dst = bool(getattr(dst, "PFScouting_JetHT", False))
+
+    pass_htt200 = bool(getattr(event, "L1_HTT200er", False))
+    pass_htt255 = bool(getattr(event, "L1_HTT255er", False))
+    pass_htt280 = bool(getattr(event, "L1_HTT280er", False))
+    pass_singlejet180 = bool(getattr(event, "L1_SingleJet180", False))
+    pass_doublejet = bool(getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False))
+    pass_ett2000 = bool(getattr(event, "L1_ETT2000", False))
+
+    pass_any_unprescaled = pass_htt280 or pass_singlejet180 or pass_doublejet or pass_ett2000
+    pass_nonhtt_unprescaled = pass_singlejet180 or pass_doublejet or pass_ett2000
+    prescaled_triggers = pass_htt200 or pass_htt255
+    pass_prescaled_only = (pass_htt200 or pass_htt255) and not pass_any_unprescaled
+
+    pass_baseline = (
+        pass_dst and
+        (pass_htt280 or pass_singlejet180)
+    )
+    pass_baseline_L1 = (
+        pass_htt280 or pass_singlejet180
+    )
+
+    return {
+        "pass_dst": pass_dst,
+        "pass_htt200": pass_htt200,
+        "pass_htt255": pass_htt255,
+        "pass_htt280": pass_htt280,
+        "pass_singlejet180": pass_singlejet180,
+        "pass_doublejet": pass_doublejet,
+        "pass_ett2000": pass_ett2000,
+        "pass_any_unprescaled": pass_any_unprescaled,
+        "pass_nonhtt_unprescaled": pass_nonhtt_unprescaled,
+        "prescaled_triggers": prescaled_triggers,
+        "pass_prescaled_only": pass_prescaled_only,
+        "pass_baseline": pass_baseline,
+        "pass_baseline_L1": pass_baseline_L1,
+    }
+
+def build_pp_dijet_mass(clean_jets, max_deta=1.3):
+    if len(clean_jets) < 2:
+        return None
+    sort_jets = sorted(clean_jets, key=lambda x: x.Pt(), reverse=True)
+    lead, sublead = sort_jets[0], sort_jets[1]
+    if abs(lead.Eta() - sublead.Eta()) >= max_deta:
+        return None
+    return (lead + sublead).M()
+
 
 class TrigDijetHTAnalysis(Module):
     def __init__(self):
@@ -157,11 +214,14 @@ class TrigDijetHTAnalysis(Module):
         self.h_ht_inclusive_passed = ROOT.TH1F("h_ht_inclusive_passed", "; H_{T} Inclusive [GeV]; Efficiency;", 150, 0., 1500.)
         self.h_pt_leading_all = ROOT.TH1F("h_pt_leading_all", "; AK4 Leading jet p_{T} [GeV]; Efficiency;", 50, 0., 500.)
         self.h_pt_leading_passed = ROOT.TH1F("h_pt_leading_passed", "; AK4 Leading jet p_{T} [GeV]; Efficiency;", 50, 0., 500.)
+        self.h_dijetMass_all = ROOT.TH1F("h_dijetMass_all", "; Dijet mass [GeV]; Efficiency;", 200, 0., 2000.)
+        self.h_dijetMass_passed = ROOT.TH1F("h_dijetMass_passed", "; Dijet mass [GeV]; Efficiency;", 200, 0., 2000.)
 
         for h in [
                 self.h_passreftrig,
                 self.h_ht_inclusive_all, self.h_ht_inclusive_passed,
                 self.h_pt_leading_all, self.h_pt_leading_passed,
+                self.h_dijetMass_all, self.h_dijetMass_passed,
         ]:
             self.addObject(h)
 
@@ -372,6 +432,10 @@ class TrigDijetHTAnalysis(Module):
             sort_jets = sorted(njetAcc, key=lambda x: x.Pt(), reverse=True)
             self.h_pt_leading_all.Fill(sort_jets[0].Pt()) 
 
+        dijet_mass = build_pp_dijet_mass(njetAcc, max_deta=1.3)
+        if dijet_mass is not None:
+            self.h_dijetMass_all.Fill(dijet_mass)
+
         # --- Unprescaled L1 bits in JetHT scouting trigger
         #unprescaled_l1Triggers = [
         #    "L1_HTT280er",
@@ -385,27 +449,13 @@ class TrigDijetHTAnalysis(Module):
         #    "L1_HTT255er",
         #]
 
-        # --- Keep only events in which one of the unprescaled triggers in the JetHT scouting path fired ---          
-        if not (                                                                                              
-                getattr(event, "L1_HTT280er", False) or                                                        
-                getattr(event, "L1_SingleJet180", False) or                                                        
-                getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or                                                        
-                getattr(event, "L1_ETT2000", False)                                                       
-        ):                                                                                    
-            return False                                                                                                          
-        
-        # --- Discard events in which one of the prescaled/disabled triggers in the JetHT scouting path fired ---          
-        if (                                                                                              
-                getattr(event, "L1_HTT200er", False) or                                                        
-                getattr(event, "L1_HTT255er", False)                                                         
-        ):                                                                                    
-            return False                                                                                                          
-
-        if dst.PFScouting_JetHT == 1:
+        trig = get_trigger_bits(event)
+        if trig["pass_baseline"]:
             self.h_ht_inclusive_passed.Fill(HT) ## Inclusive
             if len(njetAcc) >= 1:
                 self.h_pt_leading_passed.Fill(sort_jets[0].Pt()) 
-                #self.h_pt_leading_passed.Fill(sort_jets[0].pt) 
+            if dijet_mass is not None:
+                self.h_dijetMass_passed.Fill(dijet_mass)
 
         return True
     

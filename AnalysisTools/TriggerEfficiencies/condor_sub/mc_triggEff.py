@@ -50,6 +50,14 @@ def deltaR(jet, mu):
     dphi = math.fabs(math.atan2(math.sin(jet.phi - mu.phi), math.cos(jet.phi - mu.phi)))
     return math.sqrt(deta*deta + dphi*dphi)
 
+def delta_phi(phi1, phi2):
+    dphi = phi1 - phi2
+    while dphi > math.pi:
+        dphi -= 2.0 * math.pi
+    while dphi <= -math.pi:
+        dphi += 2.0 * math.pi
+    return dphi
+
 # ---------------------------------------------------------------------------------------------------
 def JetID(jet):
     eta = jet.eta
@@ -122,6 +130,59 @@ def MuonID(mu):
 
     return True
 
+
+# -------------------- TRIGGER SELECTION ------------------------#
+def get_trigger_bits(event):                                                                                                                                                                           
+    """
+    Check for:
+      - Hadronic L1 seed selection
+    """
+
+    dst = Object(event, "DST")
+    pass_dst = bool(getattr(dst, "PFScouting_JetHT", False))
+    pass_htt200 = bool(getattr(event, "L1_HTT200er", False))
+    pass_htt255 = bool(getattr(event, "L1_HTT255er", False))
+    pass_htt280 = bool(getattr(event, "L1_HTT280er", False))
+    pass_singlejet180 = bool(getattr(event, "L1_SingleJet180", False))
+    pass_doublejet = bool(getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False))
+    pass_ett2000 = bool(getattr(event, "L1_ETT2000", False))
+
+    pass_any_unprescaled = pass_htt280 or pass_singlejet180 or pass_doublejet or pass_ett2000
+    pass_nonhtt_unprescaled = pass_singlejet180 or pass_doublejet or pass_ett2000
+    prescaled_triggers = pass_htt200 or pass_htt255
+    
+    pass_prescaled_only = (pass_htt200 or pass_htt255) and not pass_any_unprescaled
+
+    pass_baseline_L1 = (
+        pass_htt280 or pass_singlejet180
+    )
+    pass_baseline = pass_dst and pass_baseline_L1
+
+    return {
+        "pass_dst": pass_dst,
+        "pass_htt200": pass_htt200,
+        "pass_htt255": pass_htt255,
+        "pass_htt280": pass_htt280,
+        "pass_singlejet180": pass_singlejet180,
+        "pass_doublejet": pass_doublejet,
+        "pass_ett2000": pass_ett2000,
+        "pass_any_unprescaled": pass_any_unprescaled,
+        "pass_nonhtt_unprescaled": pass_nonhtt_unprescaled,
+        "prescaled_triggers": prescaled_triggers,
+        "pass_prescaled_only": pass_prescaled_only,
+        "pass_any_unprescaled": pass_any_unprescaled,
+        "pass_baseline": pass_baseline,
+        "pass_baseline_L1": pass_baseline_L1
+    }
+
+def build_pp_dijet_mass(clean_jets, max_deta=1.3):
+    if len(clean_jets) < 2:
+        return None
+    sort_jets = sorted(clean_jets, key=lambda x: x.Pt(), reverse=True)
+    lead, sublead = sort_jets[0], sort_jets[1]
+    if abs(lead.Eta() - sublead.Eta()) >= max_deta:
+        return None
+    return (lead + sublead).M()
 
 class TrigDijetHTAnalysis(Module):
     def __init__(self):
@@ -199,11 +260,14 @@ class TrigDijetHTAnalysis(Module):
         self.h_ht_inclusive_passed = ROOT.TH1F("h_ht_inclusive_passed", "; H_{T} Inclusive [GeV]; Efficiency;", 150, 0., 1500.)
         self.h_pt_leading_all = ROOT.TH1F("h_pt_leading_all", "; AK4 Leading jet p_{T} [GeV]; Efficiency;", 50, 0., 500.)
         self.h_pt_leading_passed = ROOT.TH1F("h_pt_leading_passed", "; AK4 Leading jet p_{T} [GeV]; Efficiency;", 50, 0., 500.)
+        self.h_dijetMass_all = ROOT.TH1F("h_dijetMass_all", "; Dijet mass [GeV]; Efficiency;", 200, 0., 2000.)
+        self.h_dijetMass_passed = ROOT.TH1F("h_dijetMass_passed", "; Dijet mass [GeV]; Efficiency;", 200, 0., 2000.)
 
         for h in [
                 self.h_passreftrig,
                 self.h_ht_inclusive_all, self.h_ht_inclusive_passed,
                 self.h_pt_leading_all, self.h_pt_leading_passed,
+                self.h_dijetMass_all, self.h_dijetMass_passed,
         ]:
             self.addObject(h)
 
@@ -381,66 +445,23 @@ class TrigDijetHTAnalysis(Module):
             sort_jets = sorted(njetAcc, key=lambda x: x.Pt(), reverse=True)
             self.h_pt_leading_all.Fill(sort_jets[0].Pt(), eventWeight) 
 
-        # --- Unprescaled L1 bits in JetHT scouting trigger
-        #unprescaled_l1Triggers = [
-        #    "L1_HTT280er",
-        #    "L1_SingleJet180",
-        #    "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5",
-        #    "L1_ETT2000",
-        #]
-        # --- Prescaled L1 bits in JetHT scouting trigger
-        #prescaled_l1Triggers = [
-        #    "L1_HTT200er",
-        #    "L1_HTT255er",
-        #]
+        dijet_mass = build_pp_dijet_mass(njetAcc, max_deta=1.3)
+        if dijet_mass is not None:
+            self.h_dijetMass_all.Fill(dijet_mass, eventWeight)
 
-        input_l1Triggers = [
-            "L1_HTT200er",
-            "L1_HTT255er",
-            "L1_HTT280er",
-            "L1_SingleJet180",
-            "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5",
-            "L1_ETT2000",
-        ]
+        #if len(njetAcc) >= 2:
+        #    sort_jets = sorted(njetAcc, key=lambda x: x.Pt(), reverse=True)
+        #    self.h_pt_leading_all.Fill(sort_jets[0].Pt(), eventWeight) 
 
-        fired = []
-        for trig in input_l1Triggers:
-            if getattr(event, trig, False):
-                fired.append(trig)
-                
-        # --- DEBUG PRINTOUT to check the L1 bit requirement ---
-        #print(f"[DEBUG] Event {event.event}: L1 fired -> {fired}")
+        # --- Trigger requirement ---                         
+        trig = get_trigger_bits(event)                                                                                    
 
-        # --- Keep only events in which one of the unprescaled triggers in the JetHT scouting path fired ---          
-        if not (                                                                                              
-                getattr(event, "L1_HTT280er", False) or                                                        
-                getattr(event, "L1_SingleJet180", False) or                                                        
-                getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or                                                        
-                getattr(event, "L1_ETT2000", False)                                                       
-        ):                                                                                    
-            return False                                                                                                          
-
-        # --- Discard events in which one of the prescaled/disabled triggers in the JetHT scouting path fired ---          
-        noHTT_triggers = (
-            getattr(event, "L1_SingleJet180", False) or
-            getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or
-            getattr(event, "L1_ETT2000", False)
-        )
-        
-        disabled_triggers = (
-            getattr(event, "L1_HTT200er", False) or
-            getattr(event, "L1_HTT255er", False)
-        )
-
-        # Discard events triggered ONLY by bad triggers
-        if disabled_triggers and not noHTT_triggers:
-            return False
-
-        if dst.PFScouting_JetHT == 1:
+        if trig["pass_baseline"]:
             self.h_ht_inclusive_passed.Fill(HT, eventWeight) ## Inclusive
             if len(njetAcc) >= 1:
-                self.h_pt_leading_passed.Fill(sort_jets[0].Pt(), eventWeight) 
-                #self.h_pt_leading_passed.Fill(sort_jets[0].pt) 
+                self.h_pt_leading_passed.Fill(sort_jets[0].Pt(), eventWeight)
+            if dijet_mass is not None:
+                self.h_dijetMass_passed.Fill(dijet_mass, eventWeight)
 
         return True
     
@@ -462,7 +483,8 @@ preselection= "" #DST_PFScouting_SingleMuon == 1 && DST_PFScouting_JetHT == 1"
 ### Parse arguments ###
 ### --------------- ###
 args = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
-inputFile = args.get('inputFile', 'file:/eos/cms/store/cmst3/group/vhcc/ScoutingNanoAOD/2024/mc/QCD-4Jets_Bin-HT-600to800_TuneCP5_13p6TeV_madgraphMLM-pythia8/ScoutNanoTuples-16May2025_Run3_RunIII2024Summer24MiniAOD-140X_v26-v2/250517_120110/0000/nano_109.root')
+inputFile = args.get('inputFile', 'file:/eos/cms/store/cmst3/group/vhcc/ScoutingNanoAOD/2024/mc/QCD-4Jets_Bin-HT-200to400_TuneCP5_13p6TeV_madgraphMLM-pythia8/ScoutNanoTuples-16May2025_Run3_RunIII2024Summer24MiniAOD-140X_v26-v2/250517_120052/0000/nano_918.root')
+#inputFile = args.get('inputFile', 'file:/eos/cms/store/cmst3/group/vhcc/ScoutingNanoAOD/2024/mc/QCD-4Jets_Bin-HT-600to800_TuneCP5_13p6TeV_madgraphMLM-pythia8/ScoutNanoTuples-16May2025_Run3_RunIII2024Summer24MiniAOD-140X_v26-v2/250517_120110/0000/nano_109.root')
 outputFile = args.get('outputFile', 'histosMC_InclusiveTrigNanoAOD.root')
 
 ### ------- ###

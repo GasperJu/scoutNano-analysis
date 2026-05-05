@@ -3,7 +3,7 @@
 # trigger efficiency studies (data-MC)         #
 # ******************************************** #
 # HowToRun:
-# python3 compare_data_mc_eff.py --data /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEffData_2024H_wJECs.root --mc histos_TT4Q_JECs.root:762.1 histos_Wto2Q_JECs.root:16100 histos_QCD-HT100to200_JECs.root:25360000.0 histos_QCD-HT200to400_JECs.root:1951000.0 histos_QCD-HT400to600_JECs.root:96660.0 histos_QCD-HT600to800_JECs.root:13684.0 histos_QCD-HT800to1000_JECs.root:3047.0 --mc-indir /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff --lumi-pb 1000 --rebin 2
+# python3 compare_data_mc_eff.py --data /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEffData_2024H_wJECs.root --mc histos_TT4Q_JECs.root:762.1 histos_Wto2Q_HT-100to400_JECs.root:16100 histos_Wto2Q_HT-400to800_JECs.root:357.5 histos_Zto2Q-HT100to400_JECs.root:6290.0  histos_QCD-HT200to400_JECs.root:1951000.0 histos_QCD-HT400to600_JECs.root:96660.0 histos_QCD-HT600to800_JECs.root:13684.0 histos_QCD-HT800to1000_JECs.root:3047.0 --mc-indir /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff --lumi-pb 1000 --rebin 2 --variables ht_inclusive --vline 280
 
 #SAMPLES = {
     #"histos_QCD-HT100to200_JECs.root": 25360000.0,
@@ -12,7 +12,9 @@
     #"histos_QCD-HT600to800_JECs.root": 13684.0,
     #"histos_QCD-HT800to1000_JECs.root": 3047.0,
     #"histos_TT4Q_JECs.root": 762.1,
-    #"histos_Wto2Q_JECs.root": 16100.0,
+    #"histos_Wto2Q_HT-100to400_JECs.root": 16100.0,
+    #"histos_Wto2Q_HT-400to800_JECs.root": 357.5,
+    #"histos_Zto2Q-HT100to400_JECs.root": 6290.0,
 #}
 
 
@@ -23,10 +25,26 @@ from argparse import ArgumentParser
 import ROOT
 import numpy as np
 import matplotlib.pyplot as plt
-import mplhep as hep
+
+try:
+    import mplhep as hep
+except ImportError as exc:
+    hep = None
+    print(f"[WARN] Could not import mplhep ({exc}). Falling back to plain matplotlib style.")
 
 ROOT.gROOT.SetBatch(True)
-hep.style.use("CMS")
+if hep is not None:
+    hep.style.use("CMS")
+
+def add_cms_label(ax, year):
+    if hep is not None:
+        hep.cms.label("Preliminary", data=True, year=year, com="13.6", ax=ax)
+        return
+
+    ax.text(0.0, 1.01, "CMS Preliminary", transform=ax.transAxes,
+            ha="left", va="bottom", fontsize=18, fontweight="bold")
+    ax.text(1.0, 1.01, f"{year} (13.6 TeV)", transform=ax.transAxes,
+            ha="right", va="bottom", fontsize=16)
 
 # -----------------------------
 # Helpers (ROOT -> numpy)
@@ -256,14 +274,20 @@ def plot_eff_and_ratio(ax_eff, ax_ratio, x_d, y_d, dlo, dup, x_m, y_m, mlo, mup,
     ax_eff.errorbar(x_d, y_d, yerr=[dlo, dup], fmt='o', ms=4, lw=2.3, capsize=2, label=label_data)
     ax_eff.errorbar(x_m, y_m, yerr=[mlo, mup], fmt='s', ms=4, lw=2.3, capsize=2, label=label_mc, color='orchid')
 
-    # ratio (intersect bins by x position; assumes identical bin centers after rebinning)
-    if len(x_d) != len(x_m) or np.max(np.abs(x_d - x_m)) > 1e-9:
-        # If this ever happens, you can interpolate, but usually you want identical binning.
-        raise RuntimeError("Data/MC x bins do not match. Ensure same rebin/edges are used for both.")
+    # Ratio only where both samples have a populated denominator bin.
+    x_common, idx_d, idx_m = np.intersect1d(x_d, x_m, return_indices=True)
+    if len(x_common) == 0:
+        raise RuntimeError("Data/MC have no common populated x bins for the ratio panel.")
+    if len(x_common) != len(x_d) or len(x_common) != len(x_m):
+        print(f"[WARN] Ratio uses {len(x_common)} common populated bins "
+              f"(data={len(x_d)}, MC={len(x_m)}).")
 
-    r, rlo, rup = ratio_asymm(y_d, dlo, dup, y_m, mlo, mup)
-    ax_ratio.errorbar(x_d, r, yerr=[rlo, rup], fmt='o', ms=4, lw=2.0, capsize=2)
-    ax_ratio.axhline(1.0, linestyle='--', linewidth=1.2)
+    r, rlo, rup = ratio_asymm(
+        y_d[idx_d], dlo[idx_d], dup[idx_d],
+        y_m[idx_m], mlo[idx_m], mup[idx_m],
+    )
+    ax_ratio.errorbar(x_common, r, yerr=[rlo, rup], fmt='o', ms=4, lw=2.0, capsize=2)
+    ax_ratio.axhline(1.0, linestyle='--', linewidth=1.2, color='black')
 
 def main(args):
     outdir = args.outdir
@@ -277,6 +301,7 @@ def main(args):
 
     # Parse MC samples
     mc_samples = parse_mc_spec(args.mc)
+    print(mc_samples)
 
     # Rebin configuration:
     # - if --edges is provided, it overrides --rebin
@@ -332,11 +357,12 @@ def main(args):
             )
 
             # Labels / style
-            hep.cms.label("Preliminary", data=True, year=args.year, com="13.6", ax=ax_eff)
+            add_cms_label(ax_eff, args.year)
 
             xlabel_map = {
                 "ht_inclusive": r"$H_{T}$ [GeV]",
                 "pt_leading": r"AK4 leading jet $p_{T}$ [GeV]",
+                "dijetMass": r"Dijet mass [GeV]",
             }
             ax_ratio.set_xlabel(xlabel_map.get(var, var))
             ax_eff.set_ylabel("Trigger efficiency")
@@ -348,8 +374,20 @@ def main(args):
 
             # Optional vertical line (your HT threshold)
             if args.vline is not None:
-                ax_eff.axvline(args.vline, color='black', linestyle='--', linewidth=1.2)
-                ax_ratio.axvline(args.vline, color='black', linestyle='--', linewidth=1.2)
+                ax_eff.axvline(args.vline, color='gray', linestyle='--', linewidth=1.2)
+                ax_ratio.axvline(args.vline, color='gray', linestyle='--', linewidth=1.2)
+
+                # text label near the line (top of eff panel)
+                ax_eff.text(
+                    args.vline * 1.015, 0.3,              # x in data coords, y in axis fraction
+                    "L1 threshold",
+                    rotation=90,
+                    va="top",
+                    ha="left",
+                    fontsize=18,
+                    color='gray',
+                    transform=ax_eff.get_xaxis_transform()
+                )
 
             # Remove x tick labels on top panel
             plt.setp(ax_eff.get_xticklabels(), visible=False)

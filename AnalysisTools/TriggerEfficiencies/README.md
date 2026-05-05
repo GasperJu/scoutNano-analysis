@@ -16,7 +16,7 @@ python3 condor_sub/mc_triggEff.py
 python3 condor_sub/data2024_triggEffInclusive.py
 ```
 
-The code at the moment compute trigger efficiencies inclusively for the JetHT scouting path (`PFScouting_JetHT`), using the scouting single-muon trigger (`PFScouting_SingleMuon`) as a reference, looking at H_T and leading jet pt as variables.
+The code at the moment compute trigger efficiencies inclusively for the JetHT scouting path (`PFScouting_JetHT`), using the scouting single-muon trigger (`PFScouting_SingleMuon`) as a reference, looking at H_T, leading jet pt, and dijet mass as variables.
 
 A script is also provided to study different categories of events:
 * VBF-like topology;
@@ -74,7 +74,9 @@ Some plotting scripts are provided in the repository:
 * For data and MC comparison: `compare_data_mc_eff.py`, see example for running it below. 
 
 ```
-python3 compare_data_mc_eff.py --data /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEffData_2024H_wJECs.root --mc histos_TT4Q_JECs.root:762.1 histos_Wto2Q_JECs.root:16100  histos_QCD-HT200to400_JECs.root:1951000.0 histos_QCD-HT400to600_JECs.root:96660.0 histos_QCD-HT600to800_JECs.root:13684.0 histos_QCD-HT800to1000_JECs.root:3047.0 --mc-indir /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff --lumi-pb 1000 --variables ht_inclusive --vline 280 --rebin 4
+python3 compare_data_mc_eff.py --data /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEffData_2024H_wJECs.root --mc histos_TT4Q_JECs.root:762.1 histos_Wto2Q_JECs.root:16100  histos_QCD-HT200to400_JECs.root:1951000.0 histos_QCD-HT400to600_JECs.root:96660.0 histos_QCD-HT600to800_JECs.root:13684.0 histos_QCD-HT800to1000_JECs.root:3047.0 --mc-indir /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff --lumi-pb 1000 --variables ht_inclusive --vline 280 --rebin 2
 
 python3 compare_data_mc_eff.py --data /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEffData_2024H_wJECs.root --mc histos_TT4Q_JECs.root:762.1 histos_Wto2Q_JECs.root:16100  histos_QCD-HT200to400_JECs.root:1951000.0 histos_QCD-HT400to600_JECs.root:96660.0 histos_QCD-HT600to800_JECs.root:13684.0 histos_QCD-HT800to1000_JECs.root:3047.0 --mc-indir /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff --lumi-pb 1000 --variables pt_leading --vline 180
+
+python3 compare_data_mc_eff.py --data /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEffData_2024H_wJECs.root --mc histos_TT4Q_JECs.root:762.1 histos_Wto2Q_JECs.root:16100  histos_QCD-HT200to400_JECs.root:1951000.0 histos_QCD-HT400to600_JECs.root:96660.0 histos_QCD-HT600to800_JECs.root:13684.0 histos_QCD-HT800to1000_JECs.root:3047.0 --mc-indir /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff --lumi-pb 1000 --variables dijetMass --vline -1 --rebin 2
 ```

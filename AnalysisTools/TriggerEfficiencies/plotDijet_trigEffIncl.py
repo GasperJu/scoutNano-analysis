@@ -43,7 +43,7 @@ def AddCMSText(setx=0.227, sety=0.91):
     return texcms
 
 def createLegend():
-    legend = ROOT.TLegend(0.27, 0.12, 0.8, 0.27)
+    legend = ROOT.TLegend(0.27, 0.15, 0.8, 0.3)
     legend.SetFillColor(0)
     legend.SetFillStyle(0);
     legend.SetBorderSize(0);
@@ -83,7 +83,7 @@ def main(args):
     fdir = f.GetDirectory("InclusiveTrigNanoAOD")
     statOption = ROOT.TEfficiency.kFCP
 
-    variables  = ["ht_inclusive", "pt_leading"]
+    variables  = ["ht_inclusive", "pt_leading", "dijetMass"]
     triggers   = ["passed"] #HLT or DST (only the las tone now)
 
     for var in variables:
@@ -121,8 +121,18 @@ def main(args):
         axis.GetYaxis().SetLabelSize(0.045)
         axis.GetXaxis().SetTitleOffset(1.2)
         axis.GetYaxis().SetTitleOffset(1.25)
+        axis.GetYaxis().SetRangeUser(-0.02,1.1)
         
+        # ----- Add vertical line only for HT plots ------
+        if var == "ht_inclusive":
+            line = ROOT.TLine(280, -0.017, 280, 1.09)      # (x1, y1, x2, y2)
+            line.SetLineStyle(2)                     # dashed
+            line.SetLineWidth(2)
+            line.SetLineColor(ROOT.kAzure+6)
+            line.Draw("same")
+    
         # ----- Styling stuff: add texts ------
+    
         leg.Draw("same")
 
         tex_cms = AddCMSText()
@@ -133,13 +143,14 @@ def main(args):
         
         header = ROOT.TLatex()
         header.SetTextSize(0.045)
-        header.DrawLatexNDC(0.592, 0.91, "2024I (13.6 TeV)")
+        header.DrawLatexNDC(0.581, 0.91, "2024H (13.6 TeV)")
         #header.DrawLatexNDC(0.57, 0.905, "2024I, #sqrt{s} = 13 TeV")
-        
+
         c.Update()
         c.Modified()
         for fs in args.formats:
-            savename = f'/eos/user/e/elfontan/www/dijetAnaRun3/TRIGGER_EFF/TEST_HT/inclTrigEffTightMuSelection_TriggEff_{var}{fs}'
+            #savename = f'/eos/user/e/elfontan/www/dijetAnaRun3/TRIGGER_EFF/TEST_HT/inclTrigEffTightMuSelectionPlusMuCleaning_TriggEff_{var}{fs}'
+            savename = f'/eos/user/e/elfontan/www/dijetAnaRun3/TRIGGER_EFF/INCLUSIVE_TrgEff/inclTrgEff_2024H_newL1TrgLogic_TriggEff_{var}{fs}'
             c.SaveAs(savename)
             
     '''
@@ -170,8 +181,8 @@ if __name__ == "__main__":
     VERBOSE       = True
     YEAR          = "2024"
     # ----- Histograms name
-    #TRGROOTFILE   = "TEST_HTtriggEff.root"
-    TRGROOTFILE   = "/eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff//histos_Data2024_inclTrigEffTightMuSelection.root"
+    TRGROOTFILE   = "/eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEffData_2024H_newL1TrgLogic.root"
+    #TRGROOTFILE   = "/eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEff_JECs_data2024H.root"
     FORMATS       = ['.png', '.pdf']
 
     parser = ArgumentParser(description="Derive the trigger scale factors")

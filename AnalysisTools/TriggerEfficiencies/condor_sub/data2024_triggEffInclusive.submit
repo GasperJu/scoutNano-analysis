@@ -6,7 +6,10 @@ error                   = /dev/null
 log                     = /dev/null
 +JobFlavour             = "microcentury"
 +AllowWAN = True
+use_x509userproxy = true
+x509userproxy = $(X509_USER_PROXY)
 should_transfer_files   = YES
 when_to_transfer_output = ON_EXIT
+environment = ROOT_XRD_USE_XRDFS=1;XRD_REDIRECTLIMIT=20;XRD_REQUESTTIMEOUT=120
 
-queue filename from /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/list_data2024H.txt 
+queue filename from /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/list_data2024H.txt
