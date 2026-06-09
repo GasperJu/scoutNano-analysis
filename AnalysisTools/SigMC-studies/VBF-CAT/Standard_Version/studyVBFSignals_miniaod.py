@@ -23,9 +23,6 @@ from DataFormats.FWLite import Events, Handle
 
 ROOT.gROOT.SetBatch(True)
 
-#### UNDER DEVELOPMENT:
-#       Inclusion to be applied at the jet array
-from widejet_modified import build_custom_widejets_and_vbf_tag
 
 parser = argparse.ArgumentParser(description="Generator-level Higgs study in MiniAOD")
 parser.add_argument(

@@ -26,9 +26,8 @@ from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
 
 ROOT.gROOT.SetBatch(True)
 
-from widejet_modified import build_custom_widejets_and_vbf_tag, print_result_summary
-
 BASE_DIR = "/eos/cms/store/cmst3/group/run3Scouting/LowMassDijetSearch/samples/2024/mc/Signals-ScoutNano/VBFHToXX"
+
 
 parser = argparse.ArgumentParser(description="Generator-level ScoutNano Higgs study")
 parser.add_argument(
@@ -189,12 +188,8 @@ class GenHiggsScoutNanoStudy(Module):
         self.output_name = output_name
         self.writeHistFile = False
         self.total = 0
-        # Truth: signal Events (mother + daughters)
-        self.truth = 0
         self.n_higgs_found = 0
         self.n_two_body = 0
-        # Acc: N gen partons AN kinematics
-        self.accept = 0
 
     def beginJob(self, histFile=None, histDirName=None):
         Module.beginJob(self, histFile, histDirName)
@@ -368,9 +363,6 @@ class GenHiggsScoutNanoStudy(Module):
             self.sublead_decay_eta[0] = sublead.eta
             self.sublead_decay_phi[0] = sublead.phi
 
-            # Total number of signal events
-            self.truth += 1
-
         if pair is not None:
             gj1, gj2 = pair
             self.has_forward_genjet_pair[0] = 1
@@ -386,9 +378,6 @@ class GenHiggsScoutNanoStudy(Module):
             self.forward_genjet_pair_dPhi[0] = abs(delta_phi(gj1.phi, gj2.phi))
             self.forward_genjet_pair_dR[0] = delta_r(gj1.eta, gj1.phi, gj2.eta, gj2.phi)
             self.forward_genjet_pair_mass[0] = (p4_from_genjet(gj1) + p4_from_genjet(gj2)).M()
-            
-            # N gen signal quark in kinematics phase space
-            self.accept += 1
 
         self.tree.Fill()
         return True
@@ -400,18 +389,11 @@ class GenHiggsScoutNanoStudy(Module):
         print(f"Events with >=2 daughters: {self.n_two_body}")
         print("==========================================================\n")
 
-        #Ideally: N_truth == N_total
-        print(f"\n======== Acceptance VBFHTo{args.decay} {args.mass} =============")
-        print(f"True Acceptance:        {self.truth/self.total}") # ideal == 1
-        print(f"Acceptance:             {self.accept/self.total}")
-        print(f"Acceptance/True Acc:    {self.accept/self.truth}") # ideal == Acc
-        print("=================================================================\n")
-        # Store objct for Acceptance (assuming one by one)
-
         self.outfile.cd()
         self.tree.Write()
         self.outfile.Close()
         Module.endJob(self)
+
 
 if __name__ == "__main__":
     input_files = get_input_files()

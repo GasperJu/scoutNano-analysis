@@ -24,7 +24,7 @@ The script:
 
 Input can be provided either explicitly with --input or via --decay and --mass.
 """
-import copy
+
 import os
 import math
 import glob
@@ -39,8 +39,6 @@ from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collect
 from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
 
 ROOT.gROOT.SetBatch(True)
-
-from widejet_mod import build_custom_widejets_and_vbf_tag, print_result_summary
 
 BASE_DIR = "/eos/cms/store/cmst3/group/run3Scouting/LowMassDijetSearch/samples/2024/mc/Signals-ScoutNano/VBFHToXX"
 MASS_DEPENDENT_PAIR_WP = [
@@ -74,18 +72,6 @@ parser.add_argument(
     type=str,
     default=None,
     help="Output ROOT file. If omitted, a name is built from decay and mass.",
-)
-parser.add_argument(
-    "--widejetMod",
-    action='store_true',
-    help="""Module implements a custom wide-jet reconstruction in which:
-    1. Seed 1 is the highest-pT jet in the event.
-    2. Seed 2 is the jet closest in phi to the direction opposite seed 1.
-    3. Additional jets are clustered into the nearest seed if they lie within
-    a configurable wide-jet radius, by default DeltaR < 1.1.
-    4. Jets not assigned to either wide jet are retained as 'leftover jets'.
-    5. The leftover jets are used to classify the event as VBF-like if at least
-    one leftover-jet pair satisfies |DeltaEta| > 3.""",
 )
 parser.add_argument(
     "--maxEntries",
@@ -251,7 +237,6 @@ def p4_from_recojet(jet):
 
 
 def recojet_mass(jet):
-    ## Due to different name designation for PFJet and PFJetRecluster
     for attr in ["mass", "m"]:
         try:
             return float(getattr(jet, attr))
@@ -261,7 +246,6 @@ def recojet_mass(jet):
 
 
 def corrected_recojet(jet, pt_corr):
-    # NEED CHECK: IF JETID + MUON CLEANING
     return SimpleNamespace(
         original=jet,
         pt=pt_corr,
@@ -286,7 +270,6 @@ def corrected_recojet(jet, pt_corr):
 
 
 def get_input_files():
-    ### Input openner for dir and inside files (potential previous issue with root files)
     if args.input:
         files = sorted(glob.glob(args.input))
         if files:
@@ -304,20 +287,15 @@ def get_input_files():
 
 
 def default_output_name():
-    ### Output standarlizer name setter
     if args.output:
         return args.output
     return f"VBFHTo{args.decay}_M{args.mass}_recoVBF_scoutNano.root"
 
 
 def get_trigger_bits(event):
-    ### TRG MENU CONFIG LIKE
-    ### -- recording of the event characteristic 
     pass_dst = bool(getattr(event, "DST_PFScouting_JetHT", False))
     pass_htt280 = bool(getattr(event, "L1_HTT280er", False))
     pass_singlejet180 = bool(getattr(event, "L1_SingleJet180", False))
-    ### -- we will have a TRG BASELINE LEVEL and a KINEMATICS BASELINE LEVEL 
-    ### -- Complete Baseline: TRG + KINEMATICS common to the search region and neighbouring control regions!
     pass_baseline = pass_dst and (pass_htt280 or pass_singlejet180)
     return {
         "pass_dst": pass_dst,
@@ -328,8 +306,6 @@ def get_trigger_bits(event):
 
 
 def jet_id(jet):
-    ## NEED TO CHECK MUON CONDITION!!!
-    ### JET ID ###
     aeta = abs(jet.eta)
 
     total_e = (
@@ -406,8 +382,6 @@ def final_nonself_daughters(genparts, higgs_idx):
 
 
 def find_last_higgs(genparts):
-    ## 35 = heavier neutral CP-even scalar (2HDM)
-    ## 25 = lightest neutral scalar (any CP-even neutral Higgs)
     higgs_indices = [i for i, gp in enumerate(genparts) if abs(gp.pdgId) == 25]
     if not higgs_indices:
         return None, []
@@ -483,31 +457,23 @@ def central_pair_passes_selection(j1, j2):
     dPhi = abs(delta_phi(j1.phi, j2.phi))
     apt = pair_pt_imbalance(j1, j2)
 
-    # Adapt to mod
-    if args.widejetMod is True:
-        passes = True
+    if args.centralPairSelection == "angular":
+        passes = dEta < args.centralPairDEtaMax and dPhi > args.centralPairDPhiMin
+    elif args.centralPairSelection == "massDependent":
+        dr_min, apt_max = mass_dependent_pair_wp(float(args.mass))
+        passes = dR > dr_min and apt < apt_max
     else:
-        if args.centralPairSelection == "angular":
-            passes = dEta < args.centralPairDEtaMax and dPhi > args.centralPairDPhiMin
-        elif args.centralPairSelection == "massDependent":
-            dr_min, apt_max = mass_dependent_pair_wp(float(args.mass))
-            passes = dR > dr_min and apt < apt_max
-        else:
-            raise ValueError(f"Unknown centralPairSelection: {args.centralPairSelection}")
+        raise ValueError(f"Unknown centralPairSelection: {args.centralPairSelection}")
 
     return passes, dR, dEta, dPhi, apt
 
 
-def best_match_distances(j1, j2, daughters, n_truth_gen_pair):
-    # which is a sensible symmetric matching criterion for two-body decays.
+def best_match_distances(j1, j2, daughters):
     if len(daughters) < 2:
         return False, -999.0, -999.0
 
     daughters = sorted(daughters, key=lambda x: x.pt, reverse=True)
     d1, d2 = daughters[0], daughters[1]
-    n_truth_gen_pair +=1
-    ## N_truth with definition of pair
-    ### NO ACCEPTED DUE TO NO KINEMATICS PRESENT
 
     dr11 = delta_r(j1.eta, j1.phi, d1.eta, d1.phi)
     dr22 = delta_r(j2.eta, j2.phi, d2.eta, d2.phi)
@@ -515,41 +481,9 @@ def best_match_distances(j1, j2, daughters, n_truth_gen_pair):
     dr21 = delta_r(j2.eta, j2.phi, d1.eta, d1.phi)
 
     if max(dr11, dr22) <= max(dr12, dr21):
-        return True, dr11, dr22, n_truth_gen_pair
-    return True, dr12, dr21, n_truth_gen_pair
+        return True, dr11, dr22
+    return True, dr12, dr21
 
-def grouping_widejet(widejet_p4, group_jets, seed, idx):
-
-    # store the obj type
-    try:
-        grouping = copy.copy(group_jets[seed])
-        # if obj has other attributes (e.g. jetId, area, nTrack) it will be the seed one!
-    except Exception:
-        return None
-
-# Replace kinematics with the widejet kinematics
-    grouping.pt   = widejet_p4.Pt()
-    grouping.eta  = widejet_p4.Eta()
-    grouping.phi  = widejet_p4.Phi()
-    grouping.mass = widejet_p4.M()
-
-    # # keep reference to the seed jet and constituents
-    grouping.original = group_jets[seed]
-    grouping.constituents = [group_jets[i] for i in idx]
-    
-    # compare compare against widejet_p4 as reference
-    # Uses a small tolerance (1e-6) because floating point arithmetic can give tiny differences
-    match = (
-        abs(grouping.pt  - widejet_p4.Pt())  < 1e-6 and
-        abs(recojet_mass(grouping) - widejet_p4.M())   < 1e-6 #and
-    )
-
-    if match:
-        return grouping
-    else:
-        raise ValueError(f"Mismatch: "
-                         f"Pt={grouping.pt:.4f} vs {widejet_p4.Pt():.4f}, "
-                         f"M={recojet_mass(grouping):.4f} vs {widejet_p4.M():.4f}")
 
 class RecoVBFScoutNanoStudy(Module):
     def __init__(self, output_name):
@@ -557,48 +491,14 @@ class RecoVBFScoutNanoStudy(Module):
         self.writeHistFile = False
         self.total = 0
         self.after_trigger = 0
-        #N_TRUTH (potential central pair in gen mother-daughter existence)
-        self.n_truth = 0
-        #N_truth selecting the
-        self.n_truth_gen_pair = 0
-        # NO ACCEPTANCE, GIVEN NO KINEMATICS
-        #self.n_accptance = 0
         self.n_forward_pair = 0
         self.n_vbf_tag = 0
         self.n_central_pair = 0
         self.n_genmatched = 0
-        
-        if args.widejetMod:
-            ## WIDEJET MOD
-            self.result = {
-                "widejet1": None,
-                "widejet2": None,
-                "seed1_index": None,
-                "seed2_index": None,
-                "assigned_to_widejet1_indices": [],
-                "assigned_to_widejet2_indices": [],
-                "leftover_jets": [],
-                "leftover_indices": [],
-                "is_vbf": False,
-                "vbf_pair_indices": None,
-            }
-            self.result_raw = {
-                "widejet1": None,
-                "widejet2": None,
-                "seed1_index": None,
-                "seed2_index": None,
-                "assigned_to_widejet1_indices": [],
-                "assigned_to_widejet2_indices": [],
-                "leftover_jets": [],
-                "leftover_indices": [],
-                "is_vbf": False,
-                "vbf_pair_indices": None,
-            }
 
     def beginJob(self, histFile=None, histDirName=None):
         Module.beginJob(self, histFile, histDirName)
 
-        # GoldenJSON + jerc file
         jec_json = os.path.join(
             os.getenv("CMSSW_BASE", ""),
             "src",
@@ -608,18 +508,12 @@ class RecoVBFScoutNanoStudy(Module):
         if not os.path.exists(jec_json):
             raise RuntimeError(f"HLT JEC JSON not found: {jec_json}")
 
-        # CORRECTIONLIB cmsjec (JECS) -- CHECK FILE!
         cset = correctionlib.CorrectionSet.from_file(jec_json)
-        # applying the mc jex era discussed to MC truth 
-        # -- only one compound correction available
-        # -- should be applied to both MC and DATA
-        # -- data there are no residuals available
         self.jec = cset.compound["HLT_Winter24_V1_MC_L1L2L3Res_AK4PFHLT"]
 
         self.outfile = ROOT.TFile(self.output_name, "RECREATE")
         self.tree = ROOT.TTree("Events", "Reco-level VBF study tree from ScoutNano")
 
-        # Variables to fill Tree and aux
         self.run = array("I", [0])
         self.lumi = array("I", [0])
         self.event = array("L", [0])
@@ -676,7 +570,6 @@ class RecoVBFScoutNanoStudy(Module):
         self.central_jet1_pt_raw = array("f", [0.0])
         self.central_jet2_pt_raw = array("f", [0.0])
 
-        ### SNAPSHOT VARAIBLES (TREE)
         self.tree.Branch("run", self.run, "run/i")
         self.tree.Branch("lumi", self.lumi, "lumi/i")
         self.tree.Branch("event", self.event, "event/l")
@@ -732,7 +625,6 @@ class RecoVBFScoutNanoStudy(Module):
         self.tree.Branch("central_pair_match_dR2", self.central_pair_match_dR2, "central_pair_match_dR2/F")
 
     def reset(self):
-        ## STAND BY: Reset tree and variables for safety (stores info every event loop)???
         self.pass_dst_jetht[0] = 0
         self.pass_l1_htt280[0] = 0
         self.pass_l1_singlejet180[0] = 0
@@ -749,7 +641,6 @@ class RecoVBFScoutNanoStudy(Module):
         self.has_vbf_tag[0] = 0
         self.has_central_pair[0] = 0
         self.has_gen_higgs[0] = 0
-        # DECIDED TO CREAT A N_truth
         self.has_two_decay_products[0] = 0
         self.central_pair_genmatched[0] = 0
 
@@ -767,7 +658,6 @@ class RecoVBFScoutNanoStudy(Module):
             branch[0] = -999.0
 
     def corrected_jets(self, event, jets_raw):
-        ## JEC + GoldenJSON!!!!
         rho = float(getattr(event, "ScoutingRho_fixedGridRhoFastjetAll", 0.0))
         run = int(getattr(event, "run", 1))
 
@@ -786,159 +676,77 @@ class RecoVBFScoutNanoStudy(Module):
             corrected.append(corrected_recojet(jet, jet.pt * corr_factor))
         return corrected
 
-    ### LOOP
     def analyze(self, event):
-        # N OF EVENT GENERATED (STARTING FORUM ZERO)
         self.total += 1
 
-        # insertion for data? (here gen level)
-        # run number and the lumi block standatlize to 1 (gen)
-        # event subscription is EVENT+1 (starts at 1)
-        # ASSUMPTION: Snapshot histrogram pratices!
         self.run[0] = getattr(event, "run", 0)
         self.lumi[0] = getattr(event, "luminosityBlock", 0)
         self.event[0] = getattr(event, "event", 0)
-        
-        ### RESET STORAGE BEGIN JOB?
         self.reset()
 
-        ## Trigger insertion to be used in the final event definition
-        ### NO BASELINE! (NO KINEMATICS INCLUDED) 
-        ### -- this is only combination of triggers ensuring the event 
-        ### recording efficiency across data-taking 
-        
-        ### TRG "baseline": "DST_PFScouting_JetHT" (jetht always),
-        ###                 ("L1_HTT280er" or "L1_SingleJet180"),
         trigger_bits = get_trigger_bits(event)
         self.pass_dst_jetht[0] = int(trigger_bits["pass_dst"])
         self.pass_l1_htt280[0] = int(trigger_bits["pass_htt280"])
         self.pass_l1_singlejet180[0] = int(trigger_bits["pass_singlejet180"])
         self.pass_trigger_baseline[0] = int(trigger_bits["pass_baseline"])
 
-        ## STAND BY: Auto arg is the pass_baseline (RETURN TRUE??????)
-        ## ASSUMPTION: Other analysis logic
         if args.requireTriggerBaseline and not trigger_bits["pass_baseline"]:
             self.tree.Fill()
             return True
 
-        # N OF EVENT PASSING TRG baseline upward (relate to eff)
         if trigger_bits["pass_baseline"]:
             self.after_trigger += 1
-        #########
 
         genparts = Collection(event, "GenPart")
         jets_raw = Collection(event, "ScoutingPFJet")
-
-        ## CORRECTED = JECS + GoldenJSON
         jets = self.corrected_jets(event, jets_raw)
 
-        ## GEN-LEVEL -- This is N_truth kind
-        ## STAND BY "find_last_higgs"
         higgs, daughters = find_last_higgs(genparts)
         if higgs is not None:
             self.has_gen_higgs[0] = 1
         if len(daughters) >= 2:
-            # N_truth (All events with at least two outgoing partons capable of forming a CENTRAL pair)
             self.has_two_decay_products[0] = 1
-            self.n_truth += 1
-        ##########
 
-        ############### SELECTION OBJ and correction ##########################        
-        ### Scouting PFjets ==> RECHECK THE PREVIOUS AND THIS CONSIDERATION
-                
         good_jets_raw = [
-                jet for jet in jets_raw
-                if jet_id(jet) and jet.pt > args.jetPtMin and abs(jet.eta) < args.forwardEtaMax
+            jet for jet in jets_raw
+            if jet_id(jet) and jet.pt > args.jetPtMin and abs(jet.eta) < args.forwardEtaMax
         ]
-        if args.widejetMod:
-            # Convert to List of ROOT Lorentz-vector-like reconstructed jets.
-            # The input jets can be in any order.
-            self.result_raw = build_custom_widejets_and_vbf_tag([p4_from_recojet(jet) for jet in good_jets_raw])
-            # Convert to original object
-            forward_jets_raw = [
-                    good_jets_raw[i] for i in self.result_raw["leftover_indices"]
-            ]
-            central_jets_raw = [
-                    #self.result_raw["widejet1"] is TLorentz vec
-                    grouping_widejet(self.result_raw["widejet1"], good_jets_raw, self.result_raw["seed1_index"], self.result_raw["assigned_to_widejet1_indices"]),  
-                    #self.results_raw["widejet2"] is TLorentz vec
-                    grouping_widejet(self.result_raw["widejet2"], good_jets_raw, self.result_raw["seed2_index"], self.result_raw["assigned_to_widejet2_indices"])
-             ]
-
-        else:
-            forward_jets_raw = [
-                jet for jet in good_jets_raw
-                if args.forwardEtaMin <= abs(jet.eta) <= args.forwardEtaMax
-            ]
-            central_jets_raw = [
-                    jet for jet in good_jets_raw
-                    if abs(jet.eta) < args.centralEtaMax
-            ]
-            
-            central_jets_raw = sorted(central_jets_raw, key=lambda x: x.pt, reverse=True)
-        
-        ### With JECs and GoldenJSON
+        forward_jets_raw = [
+            jet for jet in good_jets_raw
+            if args.forwardEtaMin <= abs(jet.eta) <= args.forwardEtaMax
+        ]
+        central_jets_raw = [
+            jet for jet in good_jets_raw
+            if abs(jet.eta) < args.centralEtaMax
+        ]
+        central_jets_raw = sorted(central_jets_raw, key=lambda x: x.pt, reverse=True)
 
         good_jets = [
-                jet for jet in jets
-                if jet_id(jet) and jet.pt > args.jetPtMin and abs(jet.eta) < args.forwardEtaMax
+            jet for jet in jets
+            if jet_id(jet) and jet.pt > args.jetPtMin and abs(jet.eta) < args.forwardEtaMax
         ]
-        if args.widejetMod:
-            # Convert to List of ROOT Lorentz-vector-like reconstructed jets.
-            # The input jets can be in any order.
-            self.result = build_custom_widejets_and_vbf_tag([p4_from_recojet(jet) for jet in good_jets])
-            # Convert to original object
-            # Using the fact that the indexes from the original obj are preserved
-            forward_jets = [
-                    good_jets[i] for i in self.result["leftover_indices"]
-            ]
-            central_jets = [
-                    # self.result["widejet1"] is TLorentz vec
-                    grouping_widejet(self.result["widejet1"], good_jets, self.result["seed1_index"], self.result["assigned_to_widejet1_indices"]),
-                    # self.result["widejet2"] is TLorentz vec
-                    grouping_widejet(self.result["widejet2"], good_jets, self.result["seed2_index"], self.result["assigned_to_widejet2_indices"])
-            ]
+        forward_jets = [
+            jet for jet in good_jets
+            if args.forwardEtaMin <= abs(jet.eta) <= args.forwardEtaMax
+        ]
+        central_jets = [
+            jet for jet in good_jets
+            if abs(jet.eta) < args.centralEtaMax
+        ]
 
-        else:        
-            forward_jets = [
-                jet for jet in good_jets
-                if args.forwardEtaMin <= abs(jet.eta) <= args.forwardEtaMax
-            ]
-            central_jets = [
-                    jet for jet in good_jets
-                    if abs(jet.eta) < args.centralEtaMax
-            ]
-            
-            central_jets = sorted(central_jets, key=lambda x: x.pt, reverse=True)
-        ###################################################################################
+        central_jets = sorted(central_jets, key=lambda x: x.pt, reverse=True)
 
-        ## NUMBER OF JETS EXTRACTED FROM THE SCOUTING PF COLLECTIONS
-        ## "RAW RECONSTRUCTION" -- no applicance of the complete kinematics
         self.n_recojets_total_raw[0] = len(good_jets_raw)
         self.n_recojets_forward_raw[0] = len(forward_jets_raw)
         self.n_recojets_central_raw[0] = len(central_jets_raw)
-
         self.n_recojets_total[0] = len(good_jets)
         self.n_recojets_forward[0] = len(forward_jets)
         self.n_recojets_central[0] = len(central_jets)
-        ##############  
 
-        #### FORWARD GROUP TO VBF ############################
-        ## NEED CHECK!
-        if args.widejetMod and self.result["is_vbf"]:
-            #should be the VBF! (self.result["vbf_pair_indices"][n])
-            forward_pair = (good_jets[self.result["vbf_pair_indices"][0]], good_jets[self.result["vbf_pair_indices"][1]])
-        else:
-            forward_pair = best_forward_pair(forward_jets)
-        
+        forward_pair = best_forward_pair(forward_jets)
         if forward_pair is not None:
-            # N FOWARD JETS PAIR WITH THE REQUIRED CONDITION
             self.n_forward_pair += 1
-            
-            # hist?
             self.has_forward_pair[0] = 1
-            
-            ## Extract Info
             jf1, jf2 = forward_pair
             self.forward_jet1_pt[0] = jf1.pt
             self.forward_jet1_pt_raw[0] = getattr(jf1.original, "pt", -999.0)
@@ -955,45 +763,19 @@ class RecoVBFScoutNanoStudy(Module):
             self.forward_pair_dR[0] = delta_r(jf1.eta, jf1.phi, jf2.eta, jf2.phi)
             self.forward_pair_mass[0] = (p4_from_recojet(jf1) + p4_from_recojet(jf2)).M()
 
-            ### VBF SEPARATION
-            if args.widejetMod and self.result["is_vbf"]: 
-                ## SEEMS THAT THIS IS > 3
+            if self.forward_pair_dEta[0] > args.forwardPairDEtaMin:
                 self.has_vbf_tag[0] = 1
                 self.n_vbf_tag += 1
 
-            else:
-                ### -- seems that this is > 5
-                if self.forward_pair_dEta[0] > args.forwardPairDEtaMin:
-                    # hist?
-                    self.has_vbf_tag[0] = 1
-                    # N EVENT compatible with VBF with the foward jets
-                    self.n_vbf_tag += 1
-        ########################################################
-
-        #### CENTRAL GROUP #####################################
-        ## SELECT THE PAIR CENTRAL ONE according to the option
-        if args.widejetMod: 
-            # This should be the widejet
-            central_pair = (central_jets[0],central_jets[1])
-           
-        else:
-            central_pair = choose_central_pair(
-                    central_jets,
-                    args.centralPairAlgo,
-                    max_deta=(args.centralPairDEtaMax if args.centralPairSelection == "angular" else None),
-                    min_dphi=(args.centralPairDPhiMin if args.centralPairSelection == "angular" else None),
-                    target_mass=args.mass,
-            )
-
-        ## Extract info
-        if central_pair is not None and all(item is not None for item in central_pair):
+        central_pair = choose_central_pair(
+            central_jets,
+            args.centralPairAlgo,
+            max_deta=(args.centralPairDEtaMax if args.centralPairSelection == "angular" else None),
+            min_dphi=(args.centralPairDPhiMin if args.centralPairSelection == "angular" else None),
+            target_mass=args.mass,
+        )
+        if central_pair is not None:
             jc1, jc2 = central_pair
-
-            ### ADAPT IF NECESSARY 
-            #if args.widejetMod is True:
-               ## function that separates the passes_central_pair, dR, dEta, dPhi, apt
-               # passes_central_pair, dR, dEta, dPhi, apt = 
-            #else:
             passes_central_pair, dR, dEta, dPhi, apt = central_pair_passes_selection(jc1, jc2)
 
             self.central_jet1_pt[0] = jc1.pt
@@ -1012,40 +794,16 @@ class RecoVBFScoutNanoStudy(Module):
             self.central_pair_mass[0] = (p4_from_recojet(jc1) + p4_from_recojet(jc2)).M()
 
             if passes_central_pair:
-                #hist
                 self.has_central_pair[0] = 1
-                # N EVENTS DIJET UNDER THE PAIR OPTION SELECTION (N_Reco)
                 self.n_central_pair += 1
 
-                ### ADAPT IF NECESSARY
-                #if args.widejetMod is True:
-                    ## function to has_match_info, dr1, dr2, self.n_truth_gen_pair
-                #else:
-                ### ON MY COMPARISON: THERE IS NO MATCHING TO GEN EFFECTIVELY
-                ### AN SAYS dR(JET,GEN) = 0.4 ONLY (FIGURE 5)
-                has_match_info, dr1, dr2, self.n_truth_gen_pair = best_match_distances(jc1, jc2, daughters, self.n_truth_gen_pair)
+                has_match_info, dr1, dr2 = best_match_distances(jc1, jc2, daughters)
                 self.central_pair_match_dR1[0] = dr1
                 self.central_pair_match_dR2[0] = dr2
-                
-                ### ADAPT IF NECESSARY
-                #if (args.widejetMod is True) and (results["seed1_index"] and results["seed2_index"] is not None):
-                #else:
-                ### matchDR is the 0.4 default
                 if has_match_info and dr1 < args.matchDR and dr2 < args.matchDR:
-                    # hist?
                     self.central_pair_genmatched[0] = 1
-                    # N EVENTS GEN MATCHED (SAME AS THE GEN?) ==> NO, BUT LETS SEE (N_match)
                     self.n_genmatched += 1
-        #########
 
-        #if args.widejetMod:
-        #    print(f"\n======== WIDE JET Mod RAW Jets   ===========")
-        #    print(print_result_summary(self.result_raw))
-        #    print(f"\n======== WIDE JET Mod CLEAN Jets ============")
-        #    print(print_result_summary(self.result))
-        #    print("==============================================\n")
-
-        # tree upwards
         self.tree.Fill()
         return True
 
@@ -1088,21 +846,6 @@ class RecoVBFScoutNanoStudy(Module):
             f"VBF tag pair definition:     forward pair with |DeltaEta| > {args.forwardPairDEtaMin}"
         )
         print("==========================================================\n")
-
-        print(f"\n======== Efficiency VBFHTo{args.decay} {args.mass} =============")
-        print(f"Trigger Pass Ratio:  {self.after_trigger/self.total}")
-        # NOTE THAT NOT REF TRIGGER OR KINEMATICS
-        #print(f":                    {self.n_/self.has_two_decay_products[0]}")
-        #print(f"Efficiency:    {self.n_recojets_total_raw/self.n_recojets_total}")
-        # self.n_truth OK ; self.n_accept NO; n_truth_gen_pair OK
-        print(f"Reco Eff mother found:   {self.n_central_pair/self.n_truth}") # nreco/(LEADING GEN PAIR) naC
-        print(f"Reco Eff:      {self.n_central_pair/self.n_truth_gen_pair}") # nreco/(LEADING GEN PAIR) naCc
-        print(f"Match Eff:     {self.n_genmatched /self.n_central_pair}") # nmatch/n_reco
-        # HIGHLIGHT THE RECO MINIMIZER RADIUS (SYMMETRY DRIVEN?) AND SIGNAL KINEMATIC INCONSISTENCY?
-        print(f"Total Eff:     {self.n_genmatched/self.total}") #n_match/n_total
-        print("==================================================================\n")
-        # Store objct for Eff (mapping)
-        # The R being selected is the one minizing tha radius... what does this mean
 
         self.outfile.cd()
         self.tree.Write()

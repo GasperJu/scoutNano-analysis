@@ -1,5 +1,10 @@
 # Run 3 scouting dijet analysis: signal studies 
 
+#### Minor Note
+
+Enable widejetMod option as a plug in/snippet code is possible by adding the `--widejetMod` when running `studyVBFReco_scoutNano.py`. 
+
+---
 
 ## Gen-level study: MINIAODSIM
 
