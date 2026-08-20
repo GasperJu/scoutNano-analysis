@@ -289,7 +289,7 @@ def fit_flavor_mass_histogram(info, hist, outdir):
     print(f"       sigma_eff  = {result['sigma_eff']:.3f} GeV")
     if result["fwhm"] is not None:
         print(f"       FWHM       = {result['fwhm']:.3f} GeV")
-    print(f"       N(3#sigma) = {result['n_events_3sigma']:.1f} ({result['eff_3sigma_pct']:.2f}%)")
+    print(f"       N(3sigma)  = {result['n_events_3sigma']:.1f} ({result['eff_3sigma_pct']:.2f}%)")
 
     return result
 
@@ -342,6 +342,7 @@ def draw_flavor_mass_overlay(group_key, hist_entries, outdir, args):
 
     pad_top = canvas
     pad_bot = None
+    drawable_refs = []
     if draw_ratio:
         pad_top, pad_bot = split_pads_for_ratio(canvas)
 
@@ -402,12 +403,14 @@ def draw_flavor_mass_overlay(group_key, hist_entries, outdir, args):
             ratio.GetXaxis().SetTitleSize(0.12)
             ratio.GetXaxis().SetLabelSize(0.10)
             ratio.Draw("hist" if first_ratio else "hist same")
+            drawable_refs.append(ratio)
             first_ratio = False
 
         line = ROOT.TLine(draw_xmin, 1.0, draw_xmax, 1.0)
         line.SetLineStyle(2)
         line.SetLineColor(ROOT.kGray + 2)
         line.Draw()
+        drawable_refs.append(line)
 
     suffix = "_norm" if args.norm else ""
     suffix += "_ratio" if draw_ratio else ""
