@@ -6,6 +6,7 @@
 #!/usr/bin/env python3
 
 import os, sys, math, copy
+from pathlib import Path
 import ROOT
 from ROOT import TLorentzVector, TMath
 
@@ -24,6 +25,22 @@ jetdef = fj.JetDefinition(fj.antikt_algorithm, 0.4)
 from PhysicsTools.NanoAODTools.postprocessing.framework.postprocessor import PostProcessor
 from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collection, Object
 from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
+
+THIS_DIR = Path(__file__).resolve().parent
+TRIGGEREFF_DIR = THIS_DIR.parent
+if str(TRIGGEREFF_DIR) not in sys.path:
+    sys.path.insert(0, str(TRIGGEREFF_DIR))
+
+from common.cutflow import CutflowCounter
+from common.tnp_config import (
+    L1_SEED_HYPOTHESES,
+    REFERENCE_PATHS,
+    SIGNAL_PATHS,
+    clean_jets as clean_jets_fn,
+    evaluate_l1_hypothesis,
+    pass_jet_id,
+    pass_muon_id,
+)
 
 def PseudoJ(list_jets):
     pseudojets = []
@@ -45,11 +62,6 @@ def Lorentz(pseudojets):
     # Convert PseudoJets into TLorentz vectors (able to calculate Eta)
     return [TLorentzVector(pj.px(), pj.py(), pj.pz(), pj.E()) for pj in pseudojets]
 
-def deltaR(jet, mu):
-    deta = jet.eta - mu.eta
-    dphi = math.fabs(math.atan2(math.sin(jet.phi - mu.phi), math.cos(jet.phi - mu.phi)))
-    return math.sqrt(deta*deta + dphi*dphi)
-
 def delta_phi(phi1, phi2):
     dphi = phi1 - phi2
     while dphi > math.pi:
@@ -59,78 +71,6 @@ def delta_phi(phi1, phi2):
     return dphi
 
 # ---------------------------------------------------------------------------------------------------
-def JetID(jet):
-    eta = jet.eta
-    aeta = abs(eta)
-    
-    totalE = (
-        jet.neutralHadronEnergy + jet.HFHadronEnergy + 
-        jet.photonEnergy + jet.HFEMEnergy +
-        jet.muonEnergy + jet.electronEnergy +
-        jet.chargedHadronEnergy
-    )
-    if totalE <= 0:
-        return False
-
-    NHF = (jet.neutralHadronEnergy + jet.HFHadronEnergy) / float(totalE)
-    NEMF = (jet.photonEnergy + jet.HFEMEnergy) / float(totalE)
-    muFrac = jet.muonEnergy / float(totalE)
-
-    chargedMult = jet.chargedHadronMultiplicity + jet.HFHadronMultiplicity
-    neutralMult = jet.neutralHadronMultiplicity + jet.HFEMMultiplicity
-    nconst = jet.chargedHadronMultiplicity + jet.neutralHadronMultiplicity + jet.muonMultiplicity + jet.electronMultiplicity + jet.photonMultiplicity 
-
-    # -------- |Eta| < 2.6 --------
-    if aeta < 2.6:
-        if NHF >= 0.99: return False
-        if NEMF >= 0.90: return False
-        if nconst <= 1: return False
-        if chargedMult <= 0: return False
-        if muFrac >= 0.80: return False
-        return True
-
-    # --- |Eta| = [2.6,2.7] --------
-    if (aeta >= 2.6 and aeta < 2.7):
-        if NEMF >= 0.99: return False
-        if muFrac >= 0.80: return False
-        return True
-    
-    # --- |Eta| = [2.7,3.0] --------
-    if (aeta >= 2.7 and aeta < 3.0):
-
-        if NEMF >= 0.99: return False
-        if neutralMult <= 1: return False
-        return True
-
-    # --- |Eta| = [3.0,5.0] --------
-    if (aeta >= 3.0 and aeta < 5.0):
-
-        if NEMF >= 0.10: return False
-        return True
-
-    return False
-# ---------------------------------------------------------------------------------------------------
-def MuonID(mu):
-    if mu.pt <= 30: return False
-    if abs(mu.eta) >= 0.8: return False
-
-    if abs(mu.trk_dxy) >= 0.2: return False
-    if abs(mu.trk_dz) >= 0.5: return False
-    #if mu.trackIso >= 0.15: return False
-    if mu.normchi2 >= 3: return False
-
-    if mu.nValidRecoMuonHits <= 0: return False
-    if mu.nRecoMuonMatchedStations <= 1: return False
-    if mu.nValidPixelHits <= 0: return False
-    if mu.nTrackerLayersWithMeasurement <= 5: return False
-    #if mu.nValidRecoMuonHits <= 0: return False
-    #if mu.nRecoMuonMatchedStations <= 3: return False
-    #if mu.nValidPixelHits <= 1: return False
-    #if mu.nTrackerLayersWithMeasurement <= 7: return False
-
-    return True
-
-
 # -------------------- TRIGGER SELECTION ------------------------#
 def get_trigger_bits(event):                                                                                                                                                                           
     """
@@ -153,10 +93,12 @@ def get_trigger_bits(event):
     
     pass_prescaled_only = (pass_htt200 or pass_htt255) and not pass_any_unprescaled
 
-    pass_baseline_L1 = (
-        pass_htt280 or pass_singlejet180
-    )
+    baseline = next(h for h in L1_SEED_HYPOTHESES if h["name"] == "baseline")
+    exclusive = next(h for h in L1_SEED_HYPOTHESES if h["name"] == "exclusive")
+    pass_baseline_L1 = evaluate_l1_hypothesis(event, baseline)
+    pass_exclusive_l1 = evaluate_l1_hypothesis(event, exclusive)
     pass_baseline = pass_dst and pass_baseline_L1
+    pass_exclusive = pass_dst and pass_exclusive_l1
 
     return {
         "pass_dst": pass_dst,
@@ -172,7 +114,9 @@ def get_trigger_bits(event):
         "pass_prescaled_only": pass_prescaled_only,
         "pass_any_unprescaled": pass_any_unprescaled,
         "pass_baseline": pass_baseline,
-        "pass_baseline_L1": pass_baseline_L1
+        "pass_baseline_L1": pass_baseline_L1,
+        "pass_exclusive": pass_exclusive,
+        "pass_exclusive_L1": pass_exclusive_l1,
     }
 
 def build_pp_dijet_mass(clean_jets, max_deta=1.3):
@@ -185,12 +129,13 @@ def build_pp_dijet_mass(clean_jets, max_deta=1.3):
     return (lead + sublead).M()
 
 class TrigDijetHTAnalysis(Module):
-    def __init__(self):
+    def __init__(self, output_file=None):
         self.isData=False
         self.writeHistFile=True
         self.reference_paths=reference_paths
         print("[INFO] Reference path: ", reference_paths)
         self.signal_paths=signal_paths
+        self.output_file = output_file
 
     def is_good_lumi(self, run, lumi):
         """Return True if (run,lumi) is contained in golden JSON self.good_ls."""
@@ -252,6 +197,16 @@ class TrigDijetHTAnalysis(Module):
         # --------
         self.n_totEvents_refTrig = 0 
         self.n_totEvents_refTrigJetId = 0 
+        self.cutflow = CutflowCounter()
+        self.cutflow.register_stages([
+            "total",
+            "golden_json",
+            "ref_trigger",
+            "jet_id",
+            "muon_id",
+            "muon_cleaning",
+            "signal_trigger",
+        ])
 
         # Histos
         # --------
@@ -271,7 +226,8 @@ class TrigDijetHTAnalysis(Module):
         ]:
             self.addObject(h)
 
-        self.golden_json_path = "/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
+        self.golden_json_path = "/eos/home-j/jleite/SecFAILING/CMSSW_14_0_12/src/Boosted-Elisa/TriggerEfficiencies/GoldenJSON/Cert_Collisions2024_378981_386951_Golden.json"
+#"/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
         if os.path.exists(self.golden_json_path):
             with open(self.golden_json_path, "r") as f:
                 gj = json.load(f)
@@ -284,6 +240,7 @@ class TrigDijetHTAnalysis(Module):
 
             
     def analyze(self, event):
+        self.cutflow.increment("total")
 
         eventWeight = self.get_event_weight(event)
 
@@ -296,7 +253,8 @@ class TrigDijetHTAnalysis(Module):
         #    pass
         #else:
         #    if not self.is_good_lumi(run, lumi):
-        #        return False           
+        #        return False
+        self.cutflow.increment("golden_json")
         
         # -------------------------
         # --- Reference trigger ---
@@ -309,6 +267,7 @@ class TrigDijetHTAnalysis(Module):
 
         if not refAccept:
             return False
+        self.cutflow.increment("ref_trigger")
 
         self.n_totEvents_refTrig += 1
 
@@ -332,7 +291,7 @@ class TrigDijetHTAnalysis(Module):
         jec_json = os.path.join(
             os.getenv("CMSSW_BASE"),
             "src",
-            "2024_UtilsDataQuality",
+            "Boosted-Elisa/TriggerEfficiencies/2024_UtilsDataQuality",
             "jetHLT_jerc.json"
         )
         
@@ -384,42 +343,24 @@ class TrigDijetHTAnalysis(Module):
             j for j, pt_corr in zip(jets, corrected_pts) #j for j in jets 
             if pt_corr > 30 #if j.pt * jec.evaluate(*inputs) > 30 #if j.pt > 30
             and abs(j.eta) < 5
-            and JetID(j)          
+            and pass_jet_id(j)
         ]
+        if len(njetAcc) >= 2: # was: > 0
+            self.cutflow.increment("jet_id")
 
         # --- Muon veto (ScoutingMuonNoVtx with dR(mu,jet) < 0.4 ---
         muonsVtx = Collection(event, "ScoutingMuonVtx")
         muons = Collection(event, "ScoutingMuonVtx")
         #print("Number of muons = ", len(muons))
-        ngood_muonsVtx = [mu for mu in muonsVtx if MuonID(mu)]
+        ngood_muonsVtx = [mu for mu in muonsVtx if pass_muon_id(mu)]
 
         if (len(ngood_muonsVtx) < 1):
             return False
+        self.cutflow.increment("muon_id")
             
-        clean_jets = []
-
-        # ---  Muon CLEANING:
-        # -----------------------------
-        for j in njetAcc:
-           # Build jet 4-vector
-            jvec = TLorentzVector()
-            jvec.SetPtEtaPhiM(j.pt, j.eta, j.phi, j.m)
-            
-           # Check if too close to any muon
-            close_muons = [mu for mu in muons if deltaR(j, mu) < 0.4]
-           
-            if close_muons:
-               # Subtract overlapping muons
-                for mu in close_muons:
-                    muvec = TLorentzVector()
-                    muvec.SetPtEtaPhiM(mu.pt, mu.eta, mu.phi, 0.105)
-                    jvec -= muvec
-                   
-               # Discard if jet is fully removed
-                if jvec.Pt() < 1:
-                    continue
-                
-            clean_jets.append(jvec)
+        clean_jets = clean_jets_fn(njetAcc, muons, dr_cut=0.4)
+        if len(clean_jets) >= 2:   # was: unconditional
+            self.cutflow.increment("muon_cleaning")
             
         njetAcc = clean_jets
 
@@ -457,6 +398,7 @@ class TrigDijetHTAnalysis(Module):
         trig = get_trigger_bits(event)                                                                                    
 
         if trig["pass_baseline"]:
+            self.cutflow.increment("signal_trigger")
             self.h_ht_inclusive_passed.Fill(HT, eventWeight) ## Inclusive
             if len(njetAcc) >= 1:
                 self.h_pt_leading_passed.Fill(sort_jets[0].Pt(), eventWeight)
@@ -471,11 +413,19 @@ class TrigDijetHTAnalysis(Module):
         print("Summary after processing:")
         print(f"----------------------------------------------------------------")
         print(f"Total events after reference trigger: {self.n_totEvents_refTrig}")
+        print(self.cutflow.format_report())
+        cutflow_path = (
+            f"{self.output_file}_cutflow.json"
+            if self.output_file
+            else "histosMC_InclusiveTrigNanoAOD.root_cutflow.json"
+        )
+        self.cutflow.write_json(cutflow_path)
+        print(f"Cutflow JSON written to: {cutflow_path}")
         print(f"----------------------------------------------------------------")
         Module.endJob(self)
 
-reference_paths = ["PFScouting_SingleMuon"]
-signal_paths    = ["PFScouting_JetHT"]
+reference_paths = REFERENCE_PATHS
+signal_paths    = SIGNAL_PATHS
 
 preselection= "" #DST_PFScouting_SingleMuon == 1 && DST_PFScouting_JetHT == 1"
 
@@ -495,7 +445,7 @@ p = PostProcessor(
     [inputFile],
     cut=preselection,
     branchsel=None,
-    modules=[TrigDijetHTAnalysis()],
+    modules=[TrigDijetHTAnalysis(output_file=outputFile)],
     noOut=True,
     histFileName=outputFile,
     histDirName="InclusiveTrigNanoAOD"
