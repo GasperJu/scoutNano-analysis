@@ -226,7 +226,8 @@ class TrigDijetHTAnalysis(Module):
         ]:
             self.addObject(h)
 
-        self.golden_json_path = "/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
+        self.golden_json_path = "/eos/home-j/jleite/SecFAILING/CMSSW_14_0_12/src/Boosted-Elisa/TriggerEfficiencies/GoldenJSON/Cert_Collisions2024_378981_386951_Golden.json"
+#"/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
         if os.path.exists(self.golden_json_path):
             with open(self.golden_json_path, "r") as f:
                 gj = json.load(f)
@@ -290,7 +291,7 @@ class TrigDijetHTAnalysis(Module):
         jec_json = os.path.join(
             os.getenv("CMSSW_BASE"),
             "src",
-            "2024_UtilsDataQuality",
+            "Boosted-Elisa/TriggerEfficiencies/2024_UtilsDataQuality",
             "jetHLT_jerc.json"
         )
         
@@ -344,7 +345,7 @@ class TrigDijetHTAnalysis(Module):
             and abs(j.eta) < 5
             and pass_jet_id(j)
         ]
-        if len(njetAcc) > 0:
+        if len(njetAcc) >= 2: # was: > 0
             self.cutflow.increment("jet_id")
 
         # --- Muon veto (ScoutingMuonNoVtx with dR(mu,jet) < 0.4 ---
@@ -358,7 +359,8 @@ class TrigDijetHTAnalysis(Module):
         self.cutflow.increment("muon_id")
             
         clean_jets = clean_jets_fn(njetAcc, muons, dr_cut=0.4)
-        self.cutflow.increment("muon_cleaning")
+        if len(clean_jets) >= 2:   # was: unconditional
+            self.cutflow.increment("muon_cleaning")
             
         njetAcc = clean_jets
 
