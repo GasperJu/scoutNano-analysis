@@ -91,3 +91,9 @@ and a basic signal modelling based on a double-sided Crystal Ball can be done:
 ```
 python3 fit_signalPeak_VBF.py --indir VBF-dijetMass-Histos_ForFIT --algo leading --outdir /eos/user/e/elfontan/www/dijetAnaRun3/SIGModelling/VBF-CAT/
 ```
+
+For flavor-by-flavor comparisons (bb, cc, qq, gluglu) with per-mass double-CB fits and an automatic fit-parameter summary table:
+```
+python3 compare_flavor_masses.py --indir VBF-dijetMass-Histos_ForFIT --algo leading --recursive --outdir /eos/user/e/elfontan/www/dijetAnaRun3/SIGModelling/VBF-CAT/
+```
+The script writes one fit plot per flavor/mass point and a CSV table (`flavor_mass_fit_summary.csv`) with the fitted parameters and resolution/efficiency quantities.
