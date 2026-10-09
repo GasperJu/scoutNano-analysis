@@ -1,0 +1,63 @@
+# branchsel_data.txt — Step 1c
+# Branch selection for condor_sub/data2024_triggEff.py (and its staged _1c variant).
+# Strategy: drop all, keep exactly what the module reads.
+# PostProcessor usage:  branchsel = str(COMMON_DIR / "branchsel_data.txt")
+#
+# Tested against ScoutingNanoAOD ScoutNano-v1 (Run2024H).
+# If a new branch is added to the module, add it here too.
+
+drop *
+
+# --- Event header ---
+keep run
+keep luminosityBlock
+
+# --- Rho (for JEC) ---
+keep ScoutingRho_fixedGridRhoFastjetAll
+
+# --- DST (reference + signal trigger paths) ---
+keep DST_PFScouting_SingleMuon
+keep DST_PFScouting_JetHT
+
+# --- L1 seed bits (all hypotheses in L1_SEED_HYPOTHESES) ---
+keep L1_HTT200er
+keep L1_HTT255er
+keep L1_HTT280er
+keep L1_SingleJet180
+keep L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5
+keep L1_ETT2000
+
+# --- ScoutingPFJet (kinematics + JetID energy fractions + multiplicity) ---
+keep nScoutingPFJet
+keep ScoutingPFJet_pt
+keep ScoutingPFJet_eta
+keep ScoutingPFJet_phi
+keep ScoutingPFJet_m
+keep ScoutingPFJet_jetArea
+keep ScoutingPFJet_neutralHadronEnergy
+keep ScoutingPFJet_HFHadronEnergy
+keep ScoutingPFJet_photonEnergy
+keep ScoutingPFJet_HFEMEnergy
+keep ScoutingPFJet_muonEnergy
+keep ScoutingPFJet_electronEnergy
+keep ScoutingPFJet_chargedHadronEnergy
+keep ScoutingPFJet_neutralHadronMultiplicity
+keep ScoutingPFJet_HFEMMultiplicity
+keep ScoutingPFJet_chargedHadronMultiplicity
+keep ScoutingPFJet_HFHadronMultiplicity
+keep ScoutingPFJet_muonMultiplicity
+keep ScoutingPFJet_electronMultiplicity
+keep ScoutingPFJet_photonMultiplicity
+
+# --- ScoutingMuonVtx (MuonID + cleaning) ---
+keep nScoutingMuonVtx
+keep ScoutingMuonVtx_pt
+keep ScoutingMuonVtx_eta
+keep ScoutingMuonVtx_phi
+keep ScoutingMuonVtx_trk_dxy
+keep ScoutingMuonVtx_trk_dz
+keep ScoutingMuonVtx_normchi2
+keep ScoutingMuonVtx_nValidRecoMuonHits
+keep ScoutingMuonVtx_nRecoMuonMatchedStations
+keep ScoutingMuonVtx_nValidPixelHits
+keep ScoutingMuonVtx_nTrackerLayersWithMeasurement

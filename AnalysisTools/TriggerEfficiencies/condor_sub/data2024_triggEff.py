@@ -195,7 +195,8 @@ class TrigDijetHTAnalysis(Module):
         ]:
             self.addObject(h)
 
-        self.golden_json_path = "/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
+        self.golden_json_path = "/eos/home-j/jleite/SecFAILING/CMSSW_14_0_12/src/Boosted-Elisa/TriggerEfficiencies/GoldenJSON/Cert_Collisions2024_378981_386951_Golden.json"
+#"/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
         if os.path.exists(self.golden_json_path):
             with open(self.golden_json_path, "r") as f:
                 gj = json.load(f)
@@ -262,7 +263,7 @@ class TrigDijetHTAnalysis(Module):
         jec_json = os.path.join(
             os.getenv("CMSSW_BASE"),
             "src",
-            "2024_UtilsDataQuality",
+            "Boosted-Elisa/TriggerEfficiencies/2024_UtilsDataQuality",
             "jetHLT_jerc.json"
         )
         
@@ -619,7 +620,7 @@ args = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
 #inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch/')
 #inputFile = args.get('inputFile', 'root://eoscms.cern.ch//eos/cms/store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/951/00000/8547f361-c4a3-468e-97ab-3b58535911ca.root')
 inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch//store/data/Run2024H/ScoutingPFRun3/NANOAOD/ScoutNano-v1/2810000/6c46f11a-aba9-49c9-ab9d-df054244b544.root')
-outputFile = args.get('outputFile', 'histos_DijetHTTrigNanoAOD.root')
+outputFile = args.get('outputFile', 'ref_data.root')#'histos_DijetHTTrigNanoAOD.root')
 
 ### ------- ###
 ### Running ###
